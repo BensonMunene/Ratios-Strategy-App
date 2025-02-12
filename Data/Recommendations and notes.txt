@@ -1,0 +1,12 @@
+original YMAG Has 274 rows
+original YMAX has 284 rows     
+the all assets df has 249 rows
+after calculating rolling metrics we drop the NAs and the data reduces to 228 rows
+
+Suggestions:
+- Consider timing entries and exit using the hourly data and during market sessions.
+- Hourly data available on trading view
+- Check Cointegration and statistical arbitrage strategies
+- Check VWAP strategies
+
+
