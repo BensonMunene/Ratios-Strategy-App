@@ -9,4 +9,10 @@ Suggestions:
 - Check Cointegration and statistical arbitrage strategies
 - Check VWAP strategies
 
+Improvements:
+correct calculation of Profit and Loss
+May not reflect real life settings, backtest on a paper trading account. However on 
+a real treading environment, the results will be less by just 10%-5% or less
+
+
 
