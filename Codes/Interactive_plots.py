@@ -1,42 +1,63 @@
 import streamlit as st
-import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 
-# ---------------------------------------------
-# STEP A: Load Data (Replace with Your Data)
-# ---------------------------------------------
-# You should replace this with actual data loading
-data = {
-    "Date": pd.date_range(start="2024-01-01", periods=50, freq="D"),
-    "YMAG": [20 + i * 0.05 + (i % 5) * 0.2 for i in range(50)],
-    "Portfolio_Value": [10000 + (i % 10) * 50 for i in range(50)],
-    "In_Market": [True if i % 7 != 0 else False for i in range(50)]
-}
+st.title("Dual Plot Dashboard: YMAG and YMAX")
 
-# Convert to DataFrame
-ymag_df = pd.DataFrame(data)
+# ==============================================================
+# Create Sample Data for Both YMAG and YMAX
+# ==============================================================
 
-# ---------------------------------------------
-# STEP B: Identify Entry and Exit Days for YMAG
-# ---------------------------------------------
+# Common date range
+dates = pd.date_range(start="2021-01-01", periods=100, freq="D")
+
+# --- Sample Data for YMAG ---
+np.random.seed(42)  # seed for reproducibility
+ymag_price = np.cumsum(np.random.normal(loc=0.5, scale=2, size=100)) + 100
+portfolio_value_ymag = np.cumsum(np.random.normal(loc=0.3, scale=1.5, size=100)) + 50
+in_market_ymag = np.random.choice([True, False], size=100)
+
+ymag_df = pd.DataFrame({
+    "Date": dates,
+    "YMAG": ymag_price,
+    "Portfolio_Value": portfolio_value_ymag,
+    "In_Market": in_market_ymag
+})
+
+# --- Sample Data for YMAX ---
+np.random.seed(101)  # different seed for YMAX
+ymax_price = np.cumsum(np.random.normal(loc=0.4, scale=2, size=100)) + 200
+portfolio_value_ymax = np.cumsum(np.random.normal(loc=0.2, scale=1.5, size=100)) + 100
+in_market_ymax = np.random.choice([True, False], size=100)
+
+ymax_df = pd.DataFrame({
+    "Date": dates,
+    "YMAX": ymax_price,
+    "Portfolio_Value": portfolio_value_ymax,
+    "In_Market": in_market_ymax
+})
+
+# ==============================================================
+# Plot 1: YMAG Price vs. Portfolio Value
+# ==============================================================
+
+# --- Identify Entry and Exit Days for YMAG ---
 ymag_df["Entry"] = (ymag_df["In_Market"].shift(1) == False) & (ymag_df["In_Market"] == True)
 ymag_df["Exit"]  = (ymag_df["In_Market"].shift(1) == True) & (ymag_df["In_Market"] == False)
 
-# Prepare Entry & Exit Data
-entry_days = ymag_df[ymag_df["Entry"] == True]
-exit_days  = ymag_df[ymag_df["Exit"] == True]
+entry_days_ymag = ymag_df[ymag_df["Entry"]]
+exit_days_ymag  = ymag_df[ymag_df["Exit"]]
 
-# Ensure sorted data
+# Sort data by Date
 ymag_df.sort_values("Date", inplace=True)
 ymag_df.reset_index(drop=True, inplace=True)
 
-# ---------------------------------------------
-# STEP C: Create the Plotly Figure for YMAG
-# ---------------------------------------------
-fig = go.Figure()
+# --- Create Plotly Figure for YMAG ---
+fig1 = go.Figure()
 
 # YMAG Price (Left Axis)
-fig.add_trace(
+fig1.add_trace(
     go.Scatter(
         x=ymag_df["Date"],
         y=ymag_df["YMAG"],
@@ -47,11 +68,11 @@ fig.add_trace(
     )
 )
 
-# Entry Markers
-fig.add_trace(
+# Entry Markers (triangle-up)
+fig1.add_trace(
     go.Scatter(
-        x=entry_days["Date"],
-        y=entry_days["YMAG"],
+        x=entry_days_ymag["Date"],
+        y=entry_days_ymag["YMAG"],
         mode="markers",
         marker=dict(symbol="triangle-up", color="blue", size=12),
         name="Entry",
@@ -59,11 +80,11 @@ fig.add_trace(
     )
 )
 
-# Exit Markers
-fig.add_trace(
+# Exit Markers (triangle-down)
+fig1.add_trace(
     go.Scatter(
-        x=exit_days["Date"],
-        y=exit_days["YMAG"],
+        x=exit_days_ymag["Date"],
+        y=exit_days_ymag["YMAG"],
         mode="markers",
         marker=dict(symbol="triangle-down", color="red", size=12),
         name="Exit",
@@ -72,7 +93,7 @@ fig.add_trace(
 )
 
 # Portfolio Value (Right Axis)
-fig.add_trace(
+fig1.add_trace(
     go.Scatter(
         x=ymag_df["Date"],
         y=ymag_df["Portfolio_Value"],
@@ -83,9 +104,9 @@ fig.add_trace(
     )
 )
 
-# Configure Layout for Dual Axis
-fig.update_layout(
-    title="YMAG Price (Left Axis) vs. Portfolio Value (Right Axis) - Interactive Plotly",
+# Layout configuration for YMAG plot
+fig1.update_layout(
+    title="YMAG Price (Left Axis) vs. Portfolio Value (Right Axis)",
     xaxis=dict(
         title="Date",
         type="date",
@@ -120,19 +141,117 @@ fig.update_layout(
     hovermode="x unified"
 )
 
-# ---------------------------------------------
-# STEP D: Streamlit Web App
-# ---------------------------------------------
-st.set_page_config(page_title="YMAG Trading Visualization", layout="wide")
+# ==============================================================
+# Plot 2: YMAX Price vs. Portfolio Value
+# ==============================================================
 
-st.title("📈 YMAG Trading Data Dashboard")
-st.write("This dashboard visualizes the trading data of YMAG with entry/exit points.")
+# --- Identify Entry and Exit Days for YMAX ---
+ymax_df["Entry"] = (ymax_df["In_Market"].shift(1) == False) & (ymax_df["In_Market"] == True)
+ymax_df["Exit"]  = (ymax_df["In_Market"].shift(1) == True) & (ymax_df["In_Market"] == False)
 
-# Display Plotly Figure
-st.plotly_chart(fig, use_container_width=True)
+entry_days_ymax = ymax_df[ymax_df["Entry"]]
+exit_days_ymax  = ymax_df[ymax_df["Exit"]]
 
-# Display Data Preview
-st.subheader("📊 Data Preview")
-st.dataframe(ymag_df)
+# Sort data by Date
+ymax_df.sort_values("Date", inplace=True)
+ymax_df.reset_index(drop=True, inplace=True)
 
-st.markdown("Developed with **Streamlit & Plotly** 🚀")
+# --- Create Plotly Figure for YMAX ---
+fig2 = go.Figure()
+
+# YMAX Price (Left Axis)
+fig2.add_trace(
+    go.Scatter(
+        x=ymax_df["Date"],
+        y=ymax_df["YMAX"],
+        mode="lines",
+        line=dict(color="blue", width=2),
+        name="YMAX Price",
+        yaxis="y1"
+    )
+)
+
+# Entry Markers (triangle-up)
+fig2.add_trace(
+    go.Scatter(
+        x=entry_days_ymax["Date"],
+        y=entry_days_ymax["YMAX"],
+        mode="markers",
+        marker=dict(symbol="triangle-up", color="blue", size=12),
+        name="Entry",
+        yaxis="y1"
+    )
+)
+
+# Exit Markers (triangle-down)
+fig2.add_trace(
+    go.Scatter(
+        x=exit_days_ymax["Date"],
+        y=exit_days_ymax["YMAX"],
+        mode="markers",
+        marker=dict(symbol="triangle-down", color="red", size=12),
+        name="Exit",
+        yaxis="y1"
+    )
+)
+
+# Portfolio Value (Right Axis)
+fig2.add_trace(
+    go.Scatter(
+        x=ymax_df["Date"],
+        y=ymax_df["Portfolio_Value"],
+        mode="lines",
+        line=dict(color="red", width=2),
+        name="Portfolio Value",
+        yaxis="y2"
+    )
+)
+
+# Layout configuration for YMAX plot
+fig2.update_layout(
+    title="YMAX Price (Left Axis) vs. Portfolio Value (Right Axis)",
+    xaxis=dict(
+        title="Date",
+        type="date",
+        tickformat="%Y-%m",
+        tickangle=45
+    ),
+    yaxis=dict(
+        title="YMAX Price ($)",
+        side="left",
+        showgrid=False,
+        color="blue"
+    ),
+    yaxis2=dict(
+        title="Portfolio Value ($)",
+        side="right",
+        overlaying="y",
+        position=1.0,
+        showgrid=True,
+        gridwidth=1,
+        gridcolor="lightgray",
+        color="red"
+    ),
+    legend=dict(
+        x=1.0,
+        y=1.0,
+        xanchor='center',
+        yanchor='top',
+        bgcolor="rgba(255,255,255,0.7)",
+        bordercolor="black",
+        borderwidth=1
+    ),
+    hovermode="x unified"
+)
+
+# ==============================================================
+# Display the Two Plots in Separate Tabs
+# ==============================================================
+
+tab1, tab2 = st.tabs(["Plot 1: YMAG vs Portfolio", "Plot 2: YMAX vs Portfolio"])
+
+with tab1:
+    st.plotly_chart(fig1, use_container_width=True)
+
+with tab2:
+    st.plotly_chart(fig2, use_container_width=True)
