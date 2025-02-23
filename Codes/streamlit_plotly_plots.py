@@ -96,3 +96,7 @@ with tab1:
 
 with tab2:
     st.plotly_chart(ymag_plot, use_container_width=True)
+
+
+
+
