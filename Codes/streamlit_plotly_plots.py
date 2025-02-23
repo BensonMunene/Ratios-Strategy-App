@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import datetime
 
 # ==============================================
 # Page Configuration
@@ -144,7 +145,7 @@ def calculate_performance_metrics(portfolio_df):
     years = num_days / 365 if num_days > 0 else 1
     cagr = ((end_val / start_val) ** (1 / years) - 1) * 100 if years > 0 else np.nan
 
-    # Annualized Volatility => "Ann. Volatility (%)"
+    # Ann. Volatility
     ann_vol = df["Portfolio_Return"].std() * np.sqrt(252) * 100
 
     # Sharpe Ratio (assuming 2% risk-free)
@@ -169,7 +170,7 @@ def calculate_performance_metrics(portfolio_df):
     }
 
 
-def plot_portfolio_value(df, asset_label="Portfolio Value"):
+def plot_portfolio_value(df, asset_label="Portfolio Value", key_prefix=""):
     """
     Returns a Plotly line chart of 'Portfolio_Value' vs. 'Date'.
     """
@@ -185,7 +186,7 @@ def plot_portfolio_value(df, asset_label="Portfolio Value"):
     return fig
 
 
-def plot_strategy_distribution(df):
+def plot_strategy_distribution(df, key_prefix=""):
     """
     Returns a Plotly bar chart for distribution of Strategy usage.
     """
@@ -199,7 +200,7 @@ def plot_strategy_distribution(df):
     return fig
 
 
-def plot_drawdown(df):
+def plot_drawdown(df, key_prefix=""):
     """
     Returns a Plotly area chart of drawdown (%) over time.
     """
@@ -223,6 +224,13 @@ def plot_drawdown(df):
 # Sidebar Navigation
 # ==============================================
 page = st.sidebar.radio("Navigation", ["Backtester", "Strategy Overview", "About"])
+
+# Global placeholders for final data (for export)
+prices_and_stats_df = None
+ymax_df_final = None
+ymag_df_final = None
+perf_df_ymax_final = None
+perf_df_ymag_final = None
 
 # ==============================================
 # 1) BACKTESTER PAGE
@@ -295,11 +303,20 @@ exiting if conditions stray and re-entering once stability returns.
         all_assets.sort_index(inplace=True)
 
         # 3) Compute rolling correlations
-        prices_and_stats = compute_rolling_correlations(all_assets, corr_window)
-        prices_and_stats.reset_index(inplace=True)
+        ps_df = compute_rolling_correlations(all_assets, corr_window)
+        ps_df.reset_index(inplace=True)
+
+        # Make global reference for export
+        prices_and_stats_df = ps_df.copy()
 
         # 4) Strategy 1 Backtest (or part of "Both Strategies")
         run_strat_1 = (strategy_choice in ["Strategy 1 (Investment Rules)", "Both Strategies"])
+
+        # We'll store results for export
+        ymax_df_final = None
+        ymag_df_final = None
+        perf_df_ymax_final = None
+        perf_df_ymag_final = None
 
         if run_strat_1:
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -307,82 +324,164 @@ exiting if conditions stray and re-entering once stability returns.
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
             if asset_choice == "Both":
                 st.markdown("## Strategy 1 Backtest - YMAX")
-                ymax_res = backtest_strategy_1(prices_and_stats, asset="YMAX")
+                ymax_res = backtest_strategy_1(ps_df, asset="YMAX")
 
-                # YMAX Charts
+                # Unique keys to avoid duplicate element IDs
                 col_ymax1, col_ymax2 = st.columns(2)
                 with col_ymax1:
-                    fig_val_ymax = plot_portfolio_value(ymax_res, asset_label="YMAX Portfolio")
-                    st.plotly_chart(fig_val_ymax, use_container_width=True)
+                    fig_val_ymax = plot_portfolio_value(
+                        ymax_res,
+                        asset_label="YMAX Portfolio",
+                        key_prefix=f"val_ymax_{corr_window}"
+                    )
+                    st.plotly_chart(fig_val_ymax, use_container_width=True, key=f"plot_val_ymax_{corr_window}")
+
                 with col_ymax2:
-                    fig_strat_ymax = plot_strategy_distribution(ymax_res)
-                    st.plotly_chart(fig_strat_ymax, use_container_width=True)
+                    fig_strat_ymax = plot_strategy_distribution(
+                        ymax_res,
+                        key_prefix=f"strat_ymax_{corr_window}"
+                    )
+                    st.plotly_chart(fig_strat_ymax, use_container_width=True, key=f"plot_strat_ymax_{corr_window}")
 
-                # Drawdown (full width)
-                fig_dd_ymax = plot_drawdown(ymax_res)
-                st.plotly_chart(fig_dd_ymax, use_container_width=True)
+                fig_dd_ymax = plot_drawdown(ymax_res, key_prefix=f"dd_ymax_{corr_window}")
+                st.plotly_chart(fig_dd_ymax, use_container_width=True, key=f"plot_dd_ymax_{corr_window}")
 
-                # Performance Table
                 ymax_metrics = calculate_performance_metrics(ymax_res)
                 if ymax_metrics:
                     df_ymax_perf = pd.DataFrame([ymax_metrics], index=["YMAX Strategy"]).round(2)
                     st.dataframe(df_ymax_perf)
+                    perf_df_ymax_final = df_ymax_perf
                 else:
                     st.info("Not enough data points for YMAX metrics.")
 
-                st.markdown("## Strategy 1 Backtest - YMAG")
-                ymag_res = backtest_strategy_1(prices_and_stats, asset="YMAG")
+                # Convert returns to percentage format
+                ymax_res["Portfolio_Return"] = (ymax_res["Portfolio_Return"] * 100).round(2)
+                ymax_res.rename(columns={"Portfolio_Return": "Portfolio_Return (%)"}, inplace=True)
+                ymax_df_final = ymax_res.copy()
 
-                # YMAG Charts
+                st.markdown("## Strategy 1 Backtest - YMAG")
+                ymag_res = backtest_strategy_1(ps_df, asset="YMAG")
+
                 col_ymag1, col_ymag2 = st.columns(2)
                 with col_ymag1:
-                    fig_val_ymag = plot_portfolio_value(ymag_res, asset_label="YMAG Portfolio")
-                    st.plotly_chart(fig_val_ymag, use_container_width=True)
+                    fig_val_ymag = plot_portfolio_value(
+                        ymag_res,
+                        asset_label="YMAG Portfolio",
+                        key_prefix=f"val_ymag_{corr_window}"
+                    )
+                    st.plotly_chart(fig_val_ymag, use_container_width=True, key=f"plot_val_ymag_{corr_window}")
+
                 with col_ymag2:
-                    fig_strat_ymag = plot_strategy_distribution(ymag_res)
-                    st.plotly_chart(fig_strat_ymag, use_container_width=True)
+                    fig_strat_ymag = plot_strategy_distribution(
+                        ymag_res,
+                        key_prefix=f"strat_ymag_{corr_window}"
+                    )
+                    st.plotly_chart(fig_strat_ymag, use_container_width=True, key=f"plot_strat_ymag_{corr_window}")
 
-                # Drawdown (full width)
-                fig_dd_ymag = plot_drawdown(ymag_res)
-                st.plotly_chart(fig_dd_ymag, use_container_width=True)
+                fig_dd_ymag = plot_drawdown(ymag_res, key_prefix=f"dd_ymag_{corr_window}")
+                st.plotly_chart(fig_dd_ymag, use_container_width=True, key=f"plot_dd_ymag_{corr_window}")
 
-                # Performance Table
                 ymag_metrics = calculate_performance_metrics(ymag_res)
                 if ymag_metrics:
                     df_ymag_perf = pd.DataFrame([ymag_metrics], index=["YMAG Strategy"]).round(2)
                     st.dataframe(df_ymag_perf)
+                    perf_df_ymag_final = df_ymag_perf
                 else:
                     st.info("Not enough data points for YMAG metrics.")
+
+                # Convert returns to percentage format
+                ymag_res["Portfolio_Return"] = (ymag_res["Portfolio_Return"] * 100).round(2)
+                ymag_res.rename(columns={"Portfolio_Return": "Portfolio_Return (%)"}, inplace=True)
+                ymag_df_final = ymag_res.copy()
 
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
             # B) SINGLE Asset (YMAX or YMAG)
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
             else:
                 st.markdown(f"## Strategy 1 Backtest - {asset_choice}")
-                res = backtest_strategy_1(prices_and_stats, asset=asset_choice)
+                res = backtest_strategy_1(ps_df, asset=asset_choice)
 
-                # Charts
                 col1, col2 = st.columns(2)
                 with col1:
-                    fig_val = plot_portfolio_value(res, asset_label=f"{asset_choice} Portfolio")
-                    st.plotly_chart(fig_val, use_container_width=True)
+                    fig_val = plot_portfolio_value(
+                        res,
+                        asset_label=f"{asset_choice} Portfolio",
+                        key_prefix=f"val_{asset_choice}_{corr_window}"
+                    )
+                    st.plotly_chart(fig_val, use_container_width=True, key=f"plot_val_{asset_choice}_{corr_window}")
+
                 with col2:
-                    fig_strat = plot_strategy_distribution(res)
-                    st.plotly_chart(fig_strat, use_container_width=True)
+                    fig_strat = plot_strategy_distribution(
+                        res,
+                        key_prefix=f"strat_{asset_choice}_{corr_window}"
+                    )
+                    st.plotly_chart(fig_strat, use_container_width=True, key=f"plot_strat_{asset_choice}_{corr_window}")
 
-                # Drawdown
-                fig_dd = plot_drawdown(res)
-                st.plotly_chart(fig_dd, use_container_width=True)
+                fig_dd = plot_drawdown(res, key_prefix=f"dd_{asset_choice}_{corr_window}")
+                st.plotly_chart(fig_dd, use_container_width=True, key=f"plot_dd_{asset_choice}_{corr_window}")
 
-                # Performance
                 metrics_res = calculate_performance_metrics(res)
                 if metrics_res:
                     perf_df = pd.DataFrame([metrics_res], index=[f"{asset_choice} Strategy"]).round(2)
                     st.dataframe(perf_df)
+                    # Store for export
+                    if asset_choice == "YMAX":
+                        perf_df_ymax_final = perf_df
+                    else:
+                        perf_df_ymag_final = perf_df
                 else:
                     st.info("Not enough data points for metrics.")
+
+                # Convert returns to percentage format
+                res["Portfolio_Return"] = (res["Portfolio_Return"] * 100).round(2)
+                res.rename(columns={"Portfolio_Return": "Portfolio_Return (%)"}, inplace=True)
+
+                if asset_choice == "YMAX":
+                    ymax_df_final = res.copy()
+                else:
+                    ymag_df_final = res.copy()
+
         else:
             st.warning("Strategy 1 is not selected. (Strategy 2 is still a placeholder.)")
+
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # EXPORT BUTTON
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        st.markdown("---")
+        if (ymax_df_final is not None) or (ymag_df_final is not None):
+            export_button = st.button("Export Results to Excel")
+            if export_button:
+                # Create a Pandas Excel writer using XlsxWriter as the engine
+                with pd.ExcelWriter("Prices_and_stats_df.xlsx", engine="xlsxwriter") as writer:
+                    # 1) Description sheet
+                    export_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    description_data = {
+                        "Parameter": ["Strategy Selected", "Correlation Window", "Assets Chosen", "Export Date"],
+                        "Value": [strategy_choice, corr_window, asset_choice, export_date],
+                    }
+                    desc_df = pd.DataFrame(description_data)
+                    desc_df.to_excel(writer, sheet_name="Description", index=False)
+
+                    # 2) Prices_and_stats_df
+                    prices_and_stats_df.to_excel(writer, sheet_name="Prices_and_stats_df", index=False)
+
+                    # 3) Ymax Trading Results
+                    if ymax_df_final is not None:
+                        ymax_df_final.to_excel(writer, sheet_name="Ymax Trading Results", index=False)
+
+                    # 4) YMAG Trading Results
+                    if ymag_df_final is not None:
+                        ymag_df_final.to_excel(writer, sheet_name="YMAG Trading Results", index=False)
+
+                    # 5) YMAX Performance
+                    if perf_df_ymax_final is not None:
+                        perf_df_ymax_final.to_excel(writer, sheet_name="YMAX Performance", index=True)
+
+                    # 6) YMAG Performance
+                    if perf_df_ymag_final is not None:
+                        perf_df_ymag_final.to_excel(writer, sheet_name="YMAG Performance", index=True)
+
+                st.success("✅ Performance DataFrames successfully saved to 'Prices_and_stats_df.xlsx'")
 
     else:
         st.info("Click 'Run Backtest for Selected Strategy(ies)' to see results.")
