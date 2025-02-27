@@ -182,152 +182,6 @@ def backtest_strategy_2(df, asset="YMAX", initial_investment=10_000):
     return temp_df
 
 # ==============================================
-# Combination Logic
-# ==============================================
-def backtest_combined_strategies(df, asset="YMAX", initial_investment=10_000,
-                                 primary="Strategy 1", mode="Close by itself"):
-    """
-    Combines Strategy 1 & Strategy 2 for a single asset:
-      - If mode == "Close by itself", once we enter a strategy, we stay until it exits, then we can switch.
-      - If mode == "Continue running", we can run both in parallel (split capital 50/50 if both say invest).
-    Returns a DataFrame with columns:
-      [Portfolio_Value, Strategy, ...].
-    """
-    # We run each strategy's logic in parallel behind the scenes
-    s1_df = backtest_strategy_1(df, asset=asset, initial_investment=initial_investment)
-    s2_df = backtest_strategy_2(df, asset=asset, initial_investment=initial_investment)
-
-    # We'll create a new DataFrame that picks daily from S1 or S2 or both
-    combo_df = df.copy()
-    combo_df["Strategy"] = "None"
-    combo_df["Portfolio_Value"] = initial_investment
-    combo_df["Portfolio_Return"] = 0.0
-
-    # For "Close by itself" we track which strategy is active
-    active_strategy = None
-    capital = initial_investment
-
-    # For "Continue running", we track daily partial allocation
-    # We'll store daily capital for S1, S2
-    s1_cap = initial_investment
-    s2_cap = initial_investment
-
-    for i in range(len(combo_df)):
-        if i == 0:
-            # initial row
-            combo_df.at[combo_df.index[i], "Portfolio_Value"] = initial_investment
-            continue
-
-        # Grab today's signals from s1_df and s2_df
-        s1_strat = s1_df.iloc[i]["Strategy"]
-        s2_strat = s2_df.iloc[i]["Strategy"]
-        # Yesterday's combo portfolio
-        prev_val = combo_df.iloc[i - 1]["Portfolio_Value"]
-
-        if mode == "Close by itself":
-            # If we currently have an active strategy
-            if active_strategy is None:
-                # We are not in the market => check primary first
-                if primary == "Strategy 1":
-                    if s1_strat != "No Investment" and s1_strat != "Exit":
-                        # Use strategy 1
-                        active_strategy = "S1"
-                        combo_df.at[combo_df.index[i], "Strategy"] = "S1"
-                        combo_df.at[combo_df.index[i], "Portfolio_Value"] = s1_df.iloc[i]["Portfolio_Value"]
-                    else:
-                        # check strategy 2
-                        if s2_strat not in ["No Investment", "Exit"]:
-                            active_strategy = "S2"
-                            combo_df.at[combo_df.index[i], "Strategy"] = "S2"
-                            combo_df.at[combo_df.index[i], "Portfolio_Value"] = s2_df.iloc[i]["Portfolio_Value"]
-                        else:
-                            # no investment
-                            combo_df.at[combo_df.index[i], "Strategy"] = "None"
-                            combo_df.at[combo_df.index[i], "Portfolio_Value"] = prev_val
-                else:
-                    # primary == "Strategy 2"
-                    if s2_strat not in ["No Investment", "Exit"]:
-                        active_strategy = "S2"
-                        combo_df.at[combo_df.index[i], "Strategy"] = "S2"
-                        combo_df.at[combo_df.index[i], "Portfolio_Value"] = s2_df.iloc[i]["Portfolio_Value"]
-                    else:
-                        # check s1
-                        if s1_strat not in ["No Investment", "Exit"]:
-                            active_strategy = "S1"
-                            combo_df.at[combo_df.index[i], "Strategy"] = "S1"
-                            combo_df.at[combo_df.index[i], "Portfolio_Value"] = s1_df.iloc[i]["Portfolio_Value"]
-                        else:
-                            combo_df.at[combo_df.index[i], "Strategy"] = "None"
-                            combo_df.at[combo_df.index[i], "Portfolio_Value"] = prev_val
-            else:
-                # We have an active strategy => see if that strategy says "No Investment" or "Exit"
-                if active_strategy == "S1":
-                    if s1_strat in ["No Investment", "Exit"]:
-                        # close out => check if S2 invests now
-                        active_strategy = None
-                        # portfolio_value becomes previous day's value => we do not take s1's new day
-                        combo_df.at[combo_df.index[i], "Strategy"] = "None"
-                        combo_df.at[combo_df.index[i], "Portfolio_Value"] = prev_val
-                        # then we see if S2 invests => if yes, switch to S2
-                        if s2_strat not in ["No Investment", "Exit"]:
-                            active_strategy = "S2"
-                            combo_df.at[combo_df.index[i], "Strategy"] = "S2"
-                            combo_df.at[combo_df.index[i], "Portfolio_Value"] = s2_df.iloc[i]["Portfolio_Value"]
-                    else:
-                        # stay in S1
-                        combo_df.at[combo_df.index[i], "Strategy"] = "S1"
-                        combo_df.at[combo_df.index[i], "Portfolio_Value"] = s1_df.iloc[i]["Portfolio_Value"]
-
-                else:  # active_strategy == "S2"
-                    if s2_strat in ["No Investment", "Exit"]:
-                        # close out => check if S1 invests
-                        active_strategy = None
-                        combo_df.at[combo_df.index[i], "Strategy"] = "None"
-                        combo_df.at[combo_df.index[i], "Portfolio_Value"] = prev_val
-                        # see if S1 invests
-                        if s1_strat not in ["No Investment", "Exit"]:
-                            active_strategy = "S1"
-                            combo_df.at[combo_df.index[i], "Strategy"] = "S1"
-                            combo_df.at[combo_df.index[i], "Portfolio_Value"] = s1_df.iloc[i]["Portfolio_Value"]
-                    else:
-                        # stay in S2
-                        combo_df.at[combo_df.index[i], "Strategy"] = "S2"
-                        combo_df.at[combo_df.index[i], "Portfolio_Value"] = s2_df.iloc[i]["Portfolio_Value"]
-
-        else:
-            # mode == "Continue running"
-            # If S1 invests => portion allocated. If S2 invests => portion allocated.
-            # 50% each if both invest, else 100% if only one invests.
-            invests_s1 = s1_strat not in ["No Investment", "Exit"]
-            invests_s2 = s2_strat not in ["No Investment", "Exit"]
-            if invests_s1 and invests_s2:
-                # half capital in each
-                val_s1 = s1_df.iloc[i]["Portfolio_Value"]
-                val_s2 = s2_df.iloc[i]["Portfolio_Value"]
-                # But each strategy was originally run with initial_investment. We can see how it grows from day 0.
-                # We'll approximate the ratio of today's value to day 0 => apply half capital
-                ratio_s1 = val_s1 / initial_investment
-                ratio_s2 = val_s2 / initial_investment
-                new_val = (0.5 * initial_investment * ratio_s1) + (0.5 * initial_investment * ratio_s2)
-                # But we need to scale from prev_val? 
-                # For simplicity, we can assume the portfolio_value is: 0.5*s1_value + 0.5*s2_value each day
-                new_val = 0.5 * s1_df.iloc[i]["Portfolio_Value"] + 0.5 * s2_df.iloc[i]["Portfolio_Value"]
-                combo_df.at[combo_df.index[i], "Strategy"] = "S1+S2"
-                combo_df.at[combo_df.index[i], "Portfolio_Value"] = new_val
-            elif invests_s1:
-                combo_df.at[combo_df.index[i], "Strategy"] = "S1"
-                combo_df.at[combo_df.index[i], "Portfolio_Value"] = s1_df.iloc[i]["Portfolio_Value"]
-            elif invests_s2:
-                combo_df.at[combo_df.index[i], "Strategy"] = "S2"
-                combo_df.at[combo_df.index[i], "Portfolio_Value"] = s2_df.iloc[i]["Portfolio_Value"]
-            else:
-                combo_df.at[combo_df.index[i], "Strategy"] = "None"
-                combo_df.at[combo_df.index[i], "Portfolio_Value"] = prev_val
-
-    combo_df["Portfolio_Return"] = combo_df["Portfolio_Value"].pct_change()
-    return combo_df
-
-# ==============================================
 # Rolling Correlation + Other Common Functions
 # ==============================================
 def compute_rolling_correlations(df, window):
@@ -449,8 +303,8 @@ to determine long positions in YMAX/YMAG—with hedging via QQQ when volatility 
 **Strategy 2:** Enters positions only when VIX and VVIX are within a narrow “safe” range, 
 exiting if conditions stray and re-entering once stability returns.
 
-**Combination (Both Strategies):** Allows you to prioritize one strategy, 
-with two modes of switching or running them in parallel.
+**Strategy 3:** Enters positions only when VIX and VVIX are less than 20 and 95 respectively, 
+exiting if VIX is above 20 or VVIX is above 100.
 """)
 
     col_sel1, col_sel2 = st.columns([1, 1])
@@ -467,27 +321,21 @@ with two modes of switching or running them in parallel.
         st.subheader("Strategy Selection")
         strategy_choice = st.radio(
             "Select strategy to backtest:",
-            options=["Strategy 1 (Investment Rules)",
-                     "Strategy 2 (Investment Rules)",
-                     "Both Strategies"]
+            options=["Strategy 1",
+                     "Strategy 2",
+                     "Strategy 3"]
         )
-        primary_strategy = None
-        combination_mode = None
-        if strategy_choice == "Both Strategies":
-            st.markdown("**Specify Strategy Priority**")
-            primary_strategy = st.radio(
-                "Choose the primary strategy:",
-                options=["Strategy 1", "Strategy 2"]
-            )
-            st.markdown("**Combination Mode**")
-            combination_mode = st.radio(
-                "Select the combination mode:",
-                options=["Close by itself", "Continue running"]
-            )
-
+        
     st.markdown("---")
+    if strategy_choice == "Strategy 1":
     st.subheader("Parameters")
     corr_window = st.slider("Select correlation window (days):", min_value=1, max_value=30, value=14)
+    
+    if strategy_choice == "Strategy 3":
+        st.subheader("Parameters")
+        vix_threshold = st.slider("Select VIX threshold:", min_value=1, max_value=40, value=20)
+        vvix_threshold = st.slider("Select VVIX threshold:", min_value=1, max_value=120, value=95)
+        
 
     run_backtest = st.button("Run Backtest for Selected Strategy(ies)")
 
