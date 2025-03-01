@@ -972,6 +972,7 @@ elif page == "About":
 #    the app is hosted on streamlit sharing and can be accessed by anyone with the link.
 #    the app is open-source and can be forked and modified by anyone.
 
+#    show you the strategy 2 parameters i found
 
 
 
