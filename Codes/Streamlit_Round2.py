@@ -13,7 +13,21 @@ import seaborn as sns
 st.set_page_config(page_title="YMAX YMAG Backtester", layout="wide")
 
 # ==============================================
-# STRATEGY 1 (Unchanged)
+# Session-State Initialization (to persist results across reruns)
+# ==============================================
+if "ymax_df_final" not in st.session_state:
+    st.session_state["ymax_df_final"] = None
+if "ymag_df_final" not in st.session_state:
+    st.session_state["ymag_df_final"] = None
+if "perf_df_ymax_final" not in st.session_state:
+    st.session_state["perf_df_ymax_final"] = None
+if "perf_df_ymag_final" not in st.session_state:
+    st.session_state["perf_df_ymag_final"] = None
+if "prices_and_stats_df" not in st.session_state:
+    st.session_state["prices_and_stats_df"] = None
+
+# ==============================================
+# STRATEGY 1
 # ==============================================
 def backtest_strategy_1(df, asset="YMAX", initial_investment=10_000):
     """
@@ -39,7 +53,6 @@ def backtest_strategy_1(df, asset="YMAX", initial_investment=10_000):
         if row["VIX"] < 20 and row["VVIX"] < 100:
             return "Long (No Hedge)"
         elif row["VIX"] >= 20 or row["VVIX"] >= 100:
-            # Check correlation for "No Investment"
             if row[corr_vix_col] < -0.3 or row[corr_vvix_col] < -0.3:
                 return "No Investment"
             else:
@@ -88,42 +101,46 @@ def backtest_strategy_1(df, asset="YMAX", initial_investment=10_000):
     return temp_df
 
 # ==============================================
-# STRATEGY 2 (Updated to match your snippet EXACTLY)
+# STRATEGY 2
 # ==============================================
-def backtest_strategy_2(df, asset="YMAX", initial_investment=10_000):
+def backtest_strategy_2(
+    df,
+    asset="YMAX",
+    initial_investment=10_000,
+    vix_lower=15,
+    vix_upper=20,
+    vvix_lower=90,
+    vvix_upper=100,
+    vvix_reentry_upper=95
+):
     """
-    Strategy 2 from your snippet:
-    1) Remain in market if:
-       15 <= VIX <= 20 and 90 <= VVIX < 100
-    2) Re-enter if:
-       15 <= VIX <= 20 and 90 <= VVIX <= 95
-    3) Exit if:
-       VIX < 15 or VIX > 20 or VVIX < 90 or VVIX >= 100
+    1) Remain in market if: vix_lower <= VIX <= vix_upper,  vvix_lower <= VVIX < vvix_upper
+    2) Re-enter if: vix_lower <= VIX <= vix_upper, vvix_lower <= VVIX <= vvix_reentry_upper
+    3) Exit if: VIX < vix_lower or VIX > vix_upper or VVIX < vvix_lower or VVIX >= vvix_upper
     """
+
     temp_df = df.copy()
-
-    # Pick the correct columns
-    if asset == "YMAX":
-        price_col = "YMAX"
-        div_col = "YMAX Dividends"
-        strategy_label_long = "Long YMAX"
-    else:
-        price_col = "YMAG"
-        div_col = "YMAG Dividends"
-        strategy_label_long = "Long YMAG"
-
-    # Sort by date
     temp_df.sort_values("Date", inplace=True)
     temp_df.reset_index(drop=True, inplace=True)
 
-    # Helper functions
+    # Identify columns for this asset
+    if asset == "YMAX":
+        price_col = "YMAX"
+        div_col   = "YMAX Dividends"
+        strategy_label_long = "Long YMAX"
+    else:
+        price_col = "YMAG"
+        div_col   = "YMAG Dividends"
+        strategy_label_long = "Long YMAG"
+
+    # Helper functions to apply your chosen thresholds
     def exit_condition(vix, vvix):
-        return (vix < 15) or (vix > 20) or (vvix < 90) or (vvix >= 100)
+        return (vix < vix_lower) or (vix > vix_upper) or (vvix < vvix_lower) or (vvix >= vvix_upper)
 
     def reentry_condition(vix, vvix):
-        return (15 <= vix <= 20) and (90 <= vvix <= 95)
+        return (vix_lower <= vix <= vix_upper) and (vvix_lower <= vvix <= vvix_reentry_upper)
 
-    # Set up columns
+    # Initialize portfolio columns
     temp_df["Portfolio_Value"] = np.nan
     temp_df.loc[0, "Portfolio_Value"] = initial_investment
     temp_df["In_Market"] = False
@@ -132,62 +149,63 @@ def backtest_strategy_2(df, asset="YMAX", initial_investment=10_000):
     temp_df.loc[0, "Shares_Held"] = 0.0
     temp_df["Strategy"] = "No Investment"
 
+    # Main loop
     for i in range(1, len(temp_df)):
-        # Carry forward
         temp_df.loc[i, "Portfolio_Value"] = temp_df.loc[i-1, "Portfolio_Value"]
-        temp_df.loc[i, "In_Market"] = temp_df.loc[i-1, "In_Market"]
-        temp_df.loc[i, "Shares_Held"] = temp_df.loc[i-1, "Shares_Held"]
+        temp_df.loc[i, "In_Market"]       = temp_df.loc[i-1, "In_Market"]
+        temp_df.loc[i, "Shares_Held"]     = temp_df.loc[i-1, "Shares_Held"]
 
-        vix_today = temp_df.loc[i, "VIX"]
-        vvix_today = temp_df.loc[i, "VVIX"]
-        price_today = temp_df.loc[i, price_col]
-        div_today = temp_df.loc[i, div_col]
-
+        vix_today    = temp_df.loc[i, "VIX"]
+        vvix_today   = temp_df.loc[i, "VVIX"]
+        price_today  = temp_df.loc[i, price_col]
+        div_today    = temp_df.loc[i, div_col]
         currently_in_market = temp_df.loc[i-1, "In_Market"]
 
         if currently_in_market:
-            # Check exit
+            # Already in the market: check exit condition
             if exit_condition(vix_today, vvix_today):
-                # Exit: set shares=0, remain in cash
-                temp_df.loc[i, "In_Market"] = False
+                # Exit
+                temp_df.loc[i, "In_Market"]   = False
                 temp_df.loc[i, "Shares_Held"] = 0.0
-                temp_df.loc[i, "Strategy"] = "No Investment"
+                temp_df.loc[i, "Strategy"]    = "No Investment"
             else:
-                # Remain in market
+                # Stay invested
                 shares_held = temp_df.loc[i, "Shares_Held"]
                 new_val = shares_held * (price_today + div_today)
                 temp_df.loc[i, "Portfolio_Value"] = new_val
                 temp_df.loc[i, "Strategy"] = strategy_label_long
         else:
-            # Out of market -> check reentry
+            # Currently out of market: check re-entry condition
             if reentry_condition(vix_today, vvix_today):
-                # Enter
                 cash_available = temp_df.loc[i, "Portfolio_Value"]
                 if price_today > 0:
                     shares_bought = cash_available / price_today
                 else:
                     shares_bought = 0
-                temp_df.loc[i, "Shares_Held"] = shares_bought
-                temp_df.loc[i, "In_Market"] = True
-                temp_df.loc[i, "Strategy"] = strategy_label_long
+                temp_df.loc[i, "Shares_Held"]  = shares_bought
+                temp_df.loc[i, "In_Market"]    = True
+                temp_df.loc[i, "Strategy"]     = strategy_label_long
                 new_val = shares_bought * (price_today + div_today)
                 temp_df.loc[i, "Portfolio_Value"] = new_val
             else:
                 temp_df.loc[i, "Strategy"] = "No Investment"
 
+    # Calculate daily returns
     temp_df["Portfolio_Return"] = temp_df["Portfolio_Value"].pct_change()
+    temp_df["Portfolio_Value"] = temp_df["Portfolio_Value"].round(2)
     return temp_df
 
 # ==============================================
-# STRATEGY 3 (Updated to match your snippet EXACTLY)
+# STRATEGY 3
 # ==============================================
 def backtest_strategy_3(df, asset="YMAX", initial_investment=10_000):
     """
-    Strategy 3 from your snippet:
-      Enter if VIX < 20 and VVIX < 95
-      Exit if VIX > 20 or VVIX > 100
+    Enter if VIX < 20 and VVIX < 95
+    Exit if VIX > 20 or VVIX > 100
     """
     temp_df = df.copy()
+    temp_df.sort_values("Date", inplace=True)
+    temp_df.reset_index(drop=True, inplace=True)
 
     if asset == "YMAX":
         price_col = "YMAX"
@@ -198,9 +216,6 @@ def backtest_strategy_3(df, asset="YMAX", initial_investment=10_000):
         div_col = "YMAG Dividends"
         strategy_label_long = "Long YMAG"
 
-    temp_df.sort_values("Date", inplace=True)
-    temp_df.reset_index(drop=True, inplace=True)
-
     temp_df["Portfolio_Value"] = np.nan
     temp_df.loc[0, "Portfolio_Value"] = initial_investment
     temp_df["In_Market"] = False
@@ -208,6 +223,12 @@ def backtest_strategy_3(df, asset="YMAX", initial_investment=10_000):
     temp_df["Shares_Held"] = 0.0
     temp_df.loc[0, "Shares_Held"] = 0.0
     temp_df["Strategy"] = "No Investment"
+
+    def in_market_condition(vix, vvix):
+        return (vix < 20) and (vvix < 95)
+
+    def exit_condition(vix, vvix):
+        return (vix > 20) or (vvix > 100)
 
     for i in range(1, len(temp_df)):
         temp_df.loc[i, "Portfolio_Value"] = temp_df.loc[i-1, "Portfolio_Value"]
@@ -221,9 +242,8 @@ def backtest_strategy_3(df, asset="YMAX", initial_investment=10_000):
 
         currently_in_market = temp_df.loc[i-1, "In_Market"]
 
-        # If in market, check exit
         if currently_in_market:
-            if (vix_today > 20) or (vvix_today > 100):
+            if exit_condition(vix_today, vvix_today):
                 temp_df.loc[i, "In_Market"] = False
                 temp_df.loc[i, "Shares_Held"] = 0.0
                 temp_df.loc[i, "Strategy"] = "No Investment"
@@ -233,18 +253,17 @@ def backtest_strategy_3(df, asset="YMAX", initial_investment=10_000):
                 temp_df.loc[i, "Portfolio_Value"] = new_val
                 temp_df.loc[i, "Strategy"] = strategy_label_long
         else:
-            # If out of market, check entry
-            if (vix_today < 20) and (vvix_today < 95):
+            if in_market_condition(vix_today, vvix_today):
                 cash_available = temp_df.loc[i, "Portfolio_Value"]
                 if price_today > 0:
                     shares_bought = cash_available / price_today
+                    temp_df.loc[i, "Shares_Held"] = shares_bought
+                    temp_df.loc[i, "In_Market"] = True
+                    temp_df.loc[i, "Strategy"] = strategy_label_long
+                    new_val = shares_bought * (price_today + div_today)
+                    temp_df.loc[i, "Portfolio_Value"] = new_val
                 else:
-                    shares_bought = 0
-                temp_df.loc[i, "Shares_Held"] = shares_bought
-                temp_df.loc[i, "In_Market"] = True
-                temp_df.loc[i, "Strategy"] = strategy_label_long
-                new_val = shares_bought * (price_today + div_today)
-                temp_df.loc[i, "Portfolio_Value"] = new_val
+                    temp_df.loc[i, "Strategy"] = "No Investment"
             else:
                 temp_df.loc[i, "Strategy"] = "No Investment"
 
@@ -257,12 +276,10 @@ def backtest_strategy_3(df, asset="YMAX", initial_investment=10_000):
 def compute_rolling_correlations(df, window):
     returns = df.loc[:, ~df.columns.str.contains("Dividends")].pct_change()
     corr_df = pd.DataFrame(index=df.index)
-
     corr_df["YMAX-VIX Correlation"] = returns["YMAX"].rolling(window=window).corr(returns["VIX"])
     corr_df["YMAX-VVIX Correlation"] = returns["YMAX"].rolling(window=window).corr(returns["VVIX"])
     corr_df["YMAG-VIX Correlation"] = returns["YMAG"].rolling(window=window).corr(returns["VIX"])
     corr_df["YMAG-VVIX Correlation"] = returns["YMAG"].rolling(window=window).corr(returns["VVIX"])
-
     merged = df.join(corr_df)
     merged.dropna(inplace=True)
     return merged
@@ -271,25 +288,19 @@ def calculate_performance_metrics(portfolio_df):
     df = portfolio_df.dropna(subset=["Portfolio_Value"]).copy()
     if len(df) < 2:
         return {}
-
     start_val = df.iloc[0]["Portfolio_Value"]
     end_val = df.iloc[-1]["Portfolio_Value"]
     total_return = (end_val / start_val - 1) * 100
-
     num_days = (df.iloc[-1]["Date"] - df.iloc[0]["Date"]).days
     years = num_days / 365 if num_days > 0 else 1
     cagr = ((end_val / start_val) ** (1 / years) - 1) * 100 if years > 0 else np.nan
-
     ann_vol = df["Portfolio_Return"].std() * np.sqrt(252) * 100
     risk_free_rate = 0.02
     sharpe = (cagr / 100 - risk_free_rate) / (ann_vol / 100) if ann_vol != 0 else np.nan
-
     rolling_max = df["Portfolio_Value"].cummax()
     drawdown = df["Portfolio_Value"] / rolling_max - 1
     max_dd = drawdown.min() * 100
-
     calmar = (cagr / abs(max_dd)) if max_dd != 0 else np.nan
-
     return {
         "Total Return (%)": total_return,
         "CAGR (%)": cagr,
@@ -307,8 +318,14 @@ def plot_portfolio_value(df, asset_label="Portfolio Value"):
         title=f"{asset_label} Over Time",
         labels={"Portfolio_Value": "Portfolio Value ($)"},
     )
-    fig.update_traces(line=dict(width=2))
-    fig.update_layout(xaxis_title="Date", yaxis_title="Value ($)")
+    fig.update_traces(
+        line=dict(width=2),
+        hovertemplate="Date=%{x}<br>Portfolio Value=$%{y:.2f}")
+    
+    fig.update_layout(
+        xaxis_title="Date", 
+        yaxis_title="Value ($)",
+        yaxis=dict(tickformat=".2f"))
     return fig
 
 def plot_strategy_distribution(df):
@@ -326,7 +343,6 @@ def plot_drawdown(df):
     drawdown_series = (df["Portfolio_Value"] / rolling_max - 1) * 100
     dd_df = df[["Date"]].copy()
     dd_df["Drawdown"] = drawdown_series
-
     fig = px.area(
         dd_df,
         x="Date",
@@ -334,7 +350,14 @@ def plot_drawdown(df):
         title="Drawdown Over Time",
         labels={"Drawdown": "Drawdown (%)"},
     )
-    fig.update_traces(line=dict(width=2), fill="tozeroy")
+    fig.update_traces(
+        line=dict(width=2), 
+        fill="tozeroy",
+        hovertemplate="Date=%{x}<br>Drawdown=%{y:.2f}%<extra></extra>")
+    
+    # Format y-axis ticks to 2 decimal places
+    fig.update_layout(yaxis=dict(tickformat=".2f"))
+    
     return fig
 
 # ==============================================
@@ -342,20 +365,13 @@ def plot_drawdown(df):
 # ==============================================
 def plot_entry_exit(df, asset_name="YMAX"):
     temp_df = df.copy()
-
-    # If "In_Market" not found, derive from Strategy
     if "In_Market" not in temp_df.columns:
         temp_df["In_Market"] = temp_df["Strategy"].apply(lambda x: x.startswith("Long"))
-
     temp_df["Entry"] = (temp_df["In_Market"].shift(1) == False) & (temp_df["In_Market"] == True)
     temp_df["Exit"]  = (temp_df["In_Market"].shift(1) == True) & (temp_df["In_Market"] == False)
-
     entry_days = temp_df[temp_df["Entry"] == True]
     exit_days  = temp_df[temp_df["Exit"] == True]
-
     fig = go.Figure()
-
-    # 1) Asset Price (left axis)
     fig.add_trace(
         go.Scatter(
             x=temp_df["Date"],
@@ -366,8 +382,6 @@ def plot_entry_exit(df, asset_name="YMAX"):
             yaxis="y1"
         )
     )
-
-    # 2) Entry Markers
     fig.add_trace(
         go.Scatter(
             x=entry_days["Date"],
@@ -378,8 +392,6 @@ def plot_entry_exit(df, asset_name="YMAX"):
             yaxis="y1"
         )
     )
-
-    # 3) Exit Markers
     fig.add_trace(
         go.Scatter(
             x=exit_days["Date"],
@@ -390,8 +402,6 @@ def plot_entry_exit(df, asset_name="YMAX"):
             yaxis="y1"
         )
     )
-
-    # 4) Portfolio Value (right axis)
     fig.add_trace(
         go.Scatter(
             x=temp_df["Date"],
@@ -399,10 +409,10 @@ def plot_entry_exit(df, asset_name="YMAX"):
             mode="lines",
             line=dict(color="orange", width=2),
             name="Portfolio Value",
-            yaxis="y2"
+            yaxis="y2",
+            hovertemplate="<span style='color:orange;'>Portfolio Value=$%{y:.2f}</span><extra></extra>"
         )
     )
-
     fig.update_layout(
         title=f"Entry & Exit Plot ({asset_name})",
         xaxis=dict(title="Date"),
@@ -419,13 +429,12 @@ def plot_entry_exit(df, asset_name="YMAX"):
             orientation="h",
             bgcolor="rgba(255,255,255,0.6)"
         ),
-        hovermode="x unified"
+        hovermode="closest"
     )
-
     return fig
 
 # ==============================================
-# Global placeholders (as before)
+# Global placeholders
 # ==============================================
 prices_and_stats_df = None
 ymax_df_final = None
@@ -452,12 +461,28 @@ to determine long positions in YMAX/YMAG—with hedging via QQQ when volatility 
 **Strategy 2:** Enters positions only when VIX and VVIX are within a narrow “safe” range, 
 exiting if conditions stray and re-entering once stability returns.
 
-**Strategy 3:** Enters positions only when VIX and VVIX are below specified thresholds, 
-exiting if VIX is above 20 or VVIX is above 100.
+**Strategy 3:** Enters positions only when VIX < 20 and VVIX < 95, exiting if VIX > 20 or VVIX > 100.
 """)
+    st.subheader("Data Preview")
+    st.markdown("This is a preview of the data (complete data) that we are using to run the backtests below.")
+    try:
+        csv_data = pd.read_csv("All Assets and Dividends.csv")
+         # 2) Prepare data
+        csv_data["Date"] = pd.to_datetime(csv_data["Date"])
+        csv_data.set_index("Date", inplace=True)
+        # Display the recent dates rows of the data
+        st.dataframe(csv_data, height=200)
+    except FileNotFoundError:
+        st.error("Could not find 'All Assets and Dividends.csv'. Make sure it's in the same folder.")
 
-    col_sel1, col_sel2 = st.columns([1, 1])
+#Explanation for the buttons of assets and strategies        
+    st.markdown("""
+    ---
+    Below, you can choose which asset(s) to backtest and which strategy to apply. 
+    Your selections will determine the logic used in the subsequent backtest calculations.
+    """)
 
+    col_sel1, col_date, col_sel2 = st.columns([0.7, 0.8, 1],  gap="medium")
     with col_sel1:
         st.subheader("Asset Selection")
         asset_choice = st.radio(
@@ -465,7 +490,12 @@ exiting if VIX is above 20 or VVIX is above 100.
             options=["YMAX", "YMAG", "Both"],
             index=2
         )
-
+        
+    with col_date:
+        st.subheader("Date Range Selection")
+        start_date = st.date_input("Start Date", value=datetime.date(2024, 1, 1))
+        end_date = st.date_input("End Date", value=datetime.date(2025, 2, 15))
+        
     with col_sel2:
         st.subheader("Strategy Selection")
         strategy_choice = st.radio(
@@ -474,70 +504,93 @@ exiting if VIX is above 20 or VVIX is above 100.
         )
         
     st.markdown("---")
-    # Show parameter sliders based on strategy selection
+    
+     # Strategy 1 parameters (correlation window)
     if strategy_choice == "Strategy 1":
-        st.subheader("Parameters")
+        st.subheader("Parameters for Strategy 1")
         corr_window = st.slider("Select correlation window (days):", min_value=1, max_value=30, value=14)
     else:
         corr_window = 14  # default if not Strategy 1
+        
+    # After the user selects the strategy_choice...
+    if strategy_choice == "Strategy 2":
+        st.subheader("Parameters for Strategy 2")
+    # Sliders for each threshold
+        vix_lower = st.slider("VIX Lower", min_value=0, max_value=50, value=15, step=1)
+        vix_upper = st.slider("VIX Upper", min_value=0, max_value=50, value=20, step=1)
+        vvix_lower = st.slider("VVIX Lower", min_value=0, max_value=200, value=90, step=1)
+        vvix_upper = st.slider("VVIX Upper", min_value=0, max_value=200, value=100, step=1)
+        vvix_reentry_upper = st.slider("VVIX Re-Entry Upper", min_value=0, max_value=200, value=95, step=1)
+    else:
+    # Default parameters 
+        vix_lower = 15
+        vix_upper = 20
+        vvix_lower = 90
+        vvix_upper = 100
+        vvix_reentry_upper = 95
 
-    # We'll keep the existing logic for Strategy 3 threshold sliders
+    # For Strategy 3 parameters with sliders.
     if strategy_choice == "Strategy 3":
-        st.subheader("Parameters")
+        st.subheader("Parameters for Strategy 3")
         vix_threshold = st.slider("Select VIX threshold:", min_value=1, max_value=40, value=20)
         vvix_threshold = st.slider("Select VVIX threshold:", min_value=1, max_value=120, value=95)
     else:
-        # Not used for Strategy 1 & 2 in the original code
         vix_threshold = 20
         vvix_threshold = 95
 
     run_backtest = st.button("Run Backtest for Selected Strategy")
 
     if run_backtest:
+        
         # 1) Load CSV
         try:
             all_assets = pd.read_csv("All Assets and Dividends.csv")
         except FileNotFoundError:
             st.error("Could not find 'All Assets and Dividends.csv'. Make sure it's in the same folder.")
             st.stop()
-
+        
         # 2) Prepare data
         all_assets["Date"] = pd.to_datetime(all_assets["Date"])
         all_assets.set_index("Date", inplace=True)
         all_assets.sort_index(inplace=True)
-
+        
+        # 2.1) FILTER by chosen date range
+        # Make sure start_date <= end_date, or handle it gracefully
+        all_assets = all_assets.loc[str(start_date):str(end_date)]
+        
         # 3) Compute rolling correlations using corr_window
         ps_df = compute_rolling_correlations(all_assets, corr_window)
         ps_df.reset_index(inplace=True)
         prices_and_stats_df = ps_df.copy()
-
-        # Helper function for strategy
+        
+        # 4) Process asset based on selected strategy
         def process_asset(asset_name, strategy):
             if strategy == "Strategy 1":
                 return backtest_strategy_1(ps_df, asset=asset_name)
+
             elif strategy == "Strategy 2":
-                return backtest_strategy_2(ps_df, asset=asset_name)
+                # Pass dynamic slider values for Strategy 2
+                return backtest_strategy_2(
+                    ps_df,
+                    asset=asset_name,
+                    vix_lower=vix_lower,
+                    vix_upper=vix_upper,
+                    vvix_lower=vvix_lower,
+                    vvix_upper=vvix_upper,
+                    vvix_reentry_upper=vvix_reentry_upper
+                )
+                
             elif strategy == "Strategy 3":
-                # We can respect the user-chosen thresholds if needed,
-                # but your original snippet for Strategy 3 used fixed VIX<20, VVIX<95.
-                # So let's keep that logic exactly.
                 return backtest_strategy_3(ps_df, asset=asset_name)
             else:
                 return None
-
         chosen_strat = strategy_choice
 
-        # ==============================================
-        # BOTH ASSETS
-        # ==============================================
         if asset_choice == "Both":
-            # -----------------------------
-            # YMAX
-            # -----------------------------
+            # YMAX Backtest
             st.markdown(f"## {chosen_strat} Backtest - YMAX")
             ymax_res = process_asset("YMAX", chosen_strat)
-
-            # Row 1: Portfolio Value (left) + Entry-Exit (right)
+            
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
                 fig_val_ymax = plot_portfolio_value(ymax_res, asset_label=f"{chosen_strat} (YMAX)")
@@ -545,8 +598,7 @@ exiting if VIX is above 20 or VVIX is above 100.
             with row1_col2:
                 fig_entry_exit_ymax = plot_entry_exit(ymax_res, asset_name="YMAX")
                 st.plotly_chart(fig_entry_exit_ymax, use_container_width=True, key="entry_exit_ymax")
-
-            # Row 2: Drawdown (left) + Strategy Distribution (right)
+            
             row2_col1, row2_col2 = st.columns(2)
             with row2_col1:
                 fig_dd_ymax = plot_drawdown(ymax_res)
@@ -554,25 +606,25 @@ exiting if VIX is above 20 or VVIX is above 100.
             with row2_col2:
                 fig_strat_ymax = plot_strategy_distribution(ymax_res)
                 st.plotly_chart(fig_strat_ymax, use_container_width=True, key="strat_ymax")
-
+            
             ymax_metrics = calculate_performance_metrics(ymax_res)
             if ymax_metrics:
                 df_ymax_perf = pd.DataFrame([ymax_metrics], index=["YMAX Strategy"]).round(2)
                 st.dataframe(df_ymax_perf)
             else:
                 st.info("Not enough data points for YMAX metrics.")
-
+            
             ymax_res["Portfolio_Return"] = (ymax_res["Portfolio_Return"] * 100).round(2)
             ymax_res.rename(columns={"Portfolio_Return": "Portfolio_Return (%)"}, inplace=True)
-            ymax_df_final = ymax_res.copy()
+            
+            # Store YMAX results in session state
+            st.session_state["ymax_df_final"] = ymax_res
+            st.session_state["perf_df_ymax_final"] = df_ymax_perf
 
-            # -----------------------------
-            # YMAG
-            # -----------------------------
+            # YMAG Backtest
             st.markdown(f"## {chosen_strat} Backtest - YMAG")
             ymag_res = process_asset("YMAG", chosen_strat)
-
-            # Row 1: Portfolio Value (left) + Entry-Exit (right)
+            
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
                 fig_val_ymag = plot_portfolio_value(ymag_res, asset_label=f"{chosen_strat} (YMAG)")
@@ -580,8 +632,7 @@ exiting if VIX is above 20 or VVIX is above 100.
             with row1_col2:
                 fig_entry_exit_ymag = plot_entry_exit(ymag_res, asset_name="YMAG")
                 st.plotly_chart(fig_entry_exit_ymag, use_container_width=True, key="entry_exit_ymag")
-
-            # Row 2: Drawdown (left) + Strategy Distribution (right)
+            
             row2_col1, row2_col2 = st.columns(2)
             with row2_col1:
                 fig_dd_ymag = plot_drawdown(ymag_res)
@@ -589,26 +640,25 @@ exiting if VIX is above 20 or VVIX is above 100.
             with row2_col2:
                 fig_strat_ymag = plot_strategy_distribution(ymag_res)
                 st.plotly_chart(fig_strat_ymag, use_container_width=True, key="strat_ymag")
-
+            
             ymag_metrics = calculate_performance_metrics(ymag_res)
             if ymag_metrics:
                 df_ymag_perf = pd.DataFrame([ymag_metrics], index=["YMAG Strategy"]).round(2)
                 st.dataframe(df_ymag_perf)
             else:
                 st.info("Not enough data points for YMAG metrics.")
-
+            
             ymag_res["Portfolio_Return"] = (ymag_res["Portfolio_Return"] * 100).round(2)
             ymag_res.rename(columns={"Portfolio_Return": "Portfolio_Return (%)"}, inplace=True)
-            ymag_df_final = ymag_res.copy()
+            
+            st.session_state["ymag_df_final"] = ymag_res
+            st.session_state["perf_df_ymag_final"] = df_ymag_perf
 
-        # ==============================================
-        # SINGLE ASSET
-        # ==============================================
         else:
+            # Single asset
             st.markdown(f"## {chosen_strat} Backtest - {asset_choice}")
             res = process_asset(asset_choice, chosen_strat)
-
-            # Row 1: Portfolio Value (left) + Entry-Exit (right)
+            
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
                 fig_val = plot_portfolio_value(res, asset_label=f"{chosen_strat} ({asset_choice})")
@@ -616,8 +666,7 @@ exiting if VIX is above 20 or VVIX is above 100.
             with row1_col2:
                 fig_entry_exit = plot_entry_exit(res, asset_name=asset_choice)
                 st.plotly_chart(fig_entry_exit, use_container_width=True, key="entry_exit_single")
-
-            # Row 2: Drawdown (left) + Strategy Distribution (right)
+            
             row2_col1, row2_col2 = st.columns(2)
             with row2_col1:
                 fig_dd = plot_drawdown(res)
@@ -625,36 +674,182 @@ exiting if VIX is above 20 or VVIX is above 100.
             with row2_col2:
                 fig_strat = plot_strategy_distribution(res)
                 st.plotly_chart(fig_strat, use_container_width=True, key="strat_single")
-
+            
             metrics_res = calculate_performance_metrics(res)
             if metrics_res:
                 perf_df = pd.DataFrame([metrics_res], index=[f"{asset_choice} Strategy"]).round(2)
                 st.dataframe(perf_df)
             else:
                 st.info("Not enough data points for metrics.")
-
             res["Portfolio_Return"] = (res["Portfolio_Return"] * 100).round(2)
             res.rename(columns={"Portfolio_Return": "Portfolio_Return (%)"}, inplace=True)
-
-            # Store final data in placeholders
             if asset_choice == "YMAX":
-                ymax_df_final = res.copy()
+                st.session_state["ymax_df_final"] = res.copy()
             else:
-                ymag_df_final = res.copy()
+                st.session_state["ymag_df_final"] = res.copy()
+
+        # Store prices_and_stats_df in session state
+        st.session_state["prices_and_stats_df"] = prices_and_stats_df
+
+        # Display the stored data (preview)
+        if st.session_state["ymax_df_final"] is not None:
+            st.subheader("YMAX Trading Results")
+            st.dataframe(st.session_state["ymax_df_final"], height=300)
+
+        if st.session_state["ymag_df_final"] is not None:
+            st.subheader("YMAG Trading Results")
+            st.dataframe(st.session_state["ymag_df_final"], height=300)
 
     else:
         st.info("Click 'Run Backtest for Selected Strategy' to see results.")
 
+        
 # ==============================================
 # STRATEGY OVERVIEW PAGE
 # ==============================================
 elif page == "Strategy Overview":
     st.title("Strategy Overview")
     st.markdown("## Table of Contents")
+    st.markdown("- [Backtesting Methodology](#Backtesting-Methodology)")
     st.markdown("- [Strategy 1 Detailed Explanation](#strategy-1-detailed-explanation)")
     st.markdown("- [Strategy 2 Detailed Explanation](#strategy-2-detailed-explanation)")
     st.markdown("- [Strategy 3 Detailed Explanation](#strategy-3-detailed-explanation)")
     st.markdown("---")
+
+    # Backtesting Methodology Section
+    st.markdown("### Backtesting Methodology")
+    st.markdown(
+        """
+### 🚀 Handling Different Trading Strategies
+
+Each trading strategy affects the **portfolio value** differently. We now handle **three scenarios** based on the chosen strategy for each day.
+
+#### 🟢 1️⃣ Case 1: Long YMAG (No Hedge)
+##### **Condition:**
+- If **VIX < 20** and **VVIX < 100**, we go **fully long on YMAG (without hedging QQQ).**
+
+##### **Portfolio Update Formula:**
+"""
+    )
+    st.latex(r"""\text{Portfolio Value}_t = \text{Shares Held} \times (\text{YMAG Price}_t + \text{YMAG Dividend}_t)""")
+    st.markdown(
+        """
+Where:
+- **Shares Held** = Number of shares purchased using the previous day's portfolio value:
+"""
+    )
+    st.latex(r"""\text{Shares Held} = \frac{\text{Portfolio Value}_{t-1}}{\text{YMAG Price}_{t-1}}""")
+    st.markdown(
+        """
+- **YMAG Price** = The price of YMAG at time $t$.
+- **YMAG Dividend** = Dividend per share distributed at time $t$.
+
+#### ✅ Example Calculation:
+- **Yesterday’s Portfolio Value:** $10,000
+- **YMAG Price Yesterday:** $20.00
+- **Shares Purchased:** $10,000 / $20.00 = **500 shares**
+- **Today’s YMAG Price:** $20.50
+- **Dividend Today:** $0.50 per share
+"""
+    )
+    st.latex(r"""\text{Portfolio Value}_t = 500 \times (20.50 + 0.50) = 500 \times 21.00 = 10,500""")
+    st.markdown(
+        """
+---
+
+#### 🔵 2️⃣ Case 2: Long YMAG + Short QQQ (Hedged)
+##### **Condition:**
+- If **VIX ≥ 20** or **VVIX ≥ 100**, we go **long YMAG and hedge by shorting QQQ**.
+- Shorting QQQ means that **when QQQ goes up, we lose money**, and **when QQQ goes down, we gain money**.
+
+##### **Portfolio Update Formula:**
+"""
+    )
+    st.latex(r"""\text{Portfolio Value}_t = (\text{Shares Held} \times (\text{YMAG Price}_t + \text{YMAG Dividend}_t)) - \text{QQQ Hedge PnL}_t""")
+    st.markdown(
+        """
+Where:
+- **Shares Held** = Same as in Case 1:
+"""
+    )
+    st.latex(r"""\text{Shares Held} = \frac{\text{Portfolio Value}_{t-1}}{\text{YMAG Price}_{t-1}}""")
+    st.markdown(
+        """
+- **QQQ Hedge Profit/Loss (PnL):**
+"""
+    )
+    st.latex(r"""\text{QQQ Hedge PnL}_t = \text{QQQ Shares Shorted} \times (\text{QQQ Price}_{t-1} - \text{QQQ Price}_t)""")
+    st.markdown(
+        """
+- **QQQ Shares Shorted:** (Calculated only when the hedge is first applied)
+"""
+    )
+    st.latex(r"""\text{QQQ Shares Shorted} = \frac{\text{Portfolio Value}_{t-1}}{\text{QQQ Price}_{t-1}}""")
+    st.markdown(
+        """
+##### ✅ Example Calculation:
+- **Yesterday’s Portfolio Value:** $10,000
+- **YMAG Price Yesterday:** $20.00
+- **Shares Purchased:** $10,000 / $20.00 = **500 shares**
+- **Today’s YMAG Price:** $20.60
+- **Dividend Today:** $0.50 per share
+- **QQQ Price Yesterday:** $400 → **Today:** $405
+
+##### **Step 1: Calculate Hedge PnL**
+- **QQQ Shares Shorted:**
+"""
+    )
+    st.latex(r"""\frac{10,000}{400} = 25 \text{ shares}""")
+    st.markdown(
+        """
+- **QQQ Hedge Loss:**
+"""
+    )
+    st.latex(r"""25 \times (400 - 405) = 25 \times (-5) = -125""")
+    st.markdown(
+        """
+##### **Step 2: Update Portfolio Value**
+"""
+    )
+    st.latex(r"""\text{Portfolio Value}_t = (500 \times (20.60 + 0.50)) - (-125)""")
+    st.latex(r"""= (500 \times 21.10) - (-125) = 10,550 + 125 = 10,675""")
+    st.markdown(
+        """
+---
+
+#### 🔴 3️⃣ Case 3: No Investment (Stay in Cash)
+##### **Condition:**
+- If **VIX ≥ 20 or VVIX ≥ 100** and **correlation of YMAG with VIX or VVIX < -0.3**, we **do not invest**.
+- The **portfolio remains unchanged**.
+
+##### **Portfolio Update Formula:**
+"""
+    )
+    st.latex(r"""\text{Portfolio Value}_t = \text{Portfolio Value}_{t-1}""")
+    st.markdown(
+        """
+##### ✅ Example Calculation:
+- **Yesterday’s Portfolio:** $10,000
+- **Today’s Strategy:** `"No Investment"`
+- **Portfolio Value Stays the Same:**
+"""
+    )
+    st.latex(r"""\text{Portfolio Value}_t = 10,000""")
+    st.markdown(
+        """
+---
+
+#### 📌 **Summary Table**
+
+| **Strategy**                     | **Formula Used** |
+|-----------------------------------|------------------|
+| **Long YMAG (No Hedge)**          | Portfolio Value_t = Shares Held × (YMAG Price_t + YMAG Dividend_t) $$ |
+| **Long YMAG + Short QQQ**         | Portfolio Value_t = (Shares Held × (YMAG Price_t + YMAG Dividend_t)) - QQQ Hedge PnL_t  |
+| **No Investment (Stay in Cash)**  | Portfolio Value_t = Portfolio Value_{t-1} |
+
+This breakdown ensures the correct handling of **portfolio value updates under each trading strategy**, including the **correct hedge profit/loss for QQQ shorting**. 🚀
+"""
+    )
 
     st.markdown("### Strategy 1 Detailed Explanation")
     st.markdown(
@@ -665,34 +860,34 @@ elif page == "Strategy Overview":
 3. **Rule 3:** If VIX ≥ 20 or VVIX ≥ 100 and correlation of YMAX/YMAG with VIX/VVIX < -0.3 → No investment.
 """
     )
-
     st.markdown("### Strategy 2 Detailed Explanation")
     st.markdown(
         """
-**Investment Rules for Strategy 2:**  
-1. **Remain in market if**: 15 ≤ VIX ≤ 20 and 90 ≤ VVIX < 100  
-2. **Exit if**: VIX < 15 or VIX > 20 or VVIX < 90 or VVIX ≥ 100  
-3. **Re-Enter if**: VIX ∈ [15,20] and VVIX ∈ [90,95]  
+**Investment Rules for Strategy 2:**
+1. **Remain in market if**: 15 ≤ VIX ≤ 20,  90 ≤ VVIX < 100
+2. **Exit if**: VIX < 15 or VIX > 20 or VVIX < 90 or VVIX ≥ 100
+3. **Re-Enter if**: VIX ∈ [15,20] and VVIX ∈ [90,95]
 
-**Summary of Logic**:  
-- In-Market Condition: 15 ≤ VIX ≤ 20, 90 ≤ VVIX < 100  
-- Exit Condition: VIX < 15 or VIX > 20, or VVIX < 90 or VVIX ≥ 100  
+**Summary of Logic**:
+- In-Market Condition: 15 ≤ VIX ≤ 20, 90 ≤ VVIX < 100
+- Exit Condition: VIX < 15 or VIX > 20, or VVIX < 90 or VVIX ≥ 100
 - Re-Entry Condition: VIX ∈ [15,20], VVIX ∈ [90,95]
 """
     )
-
     st.markdown("### Strategy 3 Detailed Explanation")
     st.markdown(
         """
-**Investment Rules for Strategy 3:**  
-1. **Enter if**: VIX < 20 and VVIX < 95  
-2. **Exit if**: VIX > 20 or VVIX > 100  
+**Investment Rules for Strategy 3:**
+1. **Enter if**: VIX < 20 and VVIX < 95
+2. **Exit if**: VIX > 20 or VVIX > 100
 """
     )
 
-# ==============================================
-# ABOUT PAGE
-# ==============================================
 elif page == "About":
     st.title("About")
-    st.write("This page is under construction.")
+    st.write("This app allows you to backtest trading strategies on YMAX and YMAG assets using historical data. Features include:")
+    st.write("- **Asset Selection**: Choose YMAX, YMAG, or both.")
+    st.write("- **Strategy Selection**: Test three strategies with customizable parameters.")
+    st.write("- **Interactive Plots**: Visualize performance, entry/exit points, strategy distribution, and drawdowns using Plotly.")
+    st.write("- **Performance Metrics**: View Total Return, CAGR, Volatility, Sharpe Ratio, Max Drawdown, and Calmar Ratio.")
+    st.write("- **Export**: Save results to an Excel file.")
