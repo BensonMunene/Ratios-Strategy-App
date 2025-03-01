@@ -454,15 +454,21 @@ if page == "Backtester":
     st.title("YMAX YMAG Backtester")
 
     st.header("Strategy Summaries")
-    st.markdown("""
+    st.markdown(
+        """
 **Strategy 1:** Uses VIX/VVIX thresholds and correlation with market volatility 
 to determine long positions in YMAX/YMAG—with hedging via QQQ when volatility is high.
 
-**Strategy 2:** Enters positions only when VIX and VVIX are within a narrow “safe” range, 
-exiting if conditions stray and re-entering once stability returns.
+**Strategy 2:** invests only when VIX is between 15 and 20 and VVIX is between 90 and 100, 
+exiting if volatility moves outside these ranges. Its default sliders are VIX Lower=15, 
+VIX Upper=20, VVIX Lower=90, VVIX Upper=100, and VVIX Re-Entry=95. This ensures the strategy 
+stays in a “safe” volatility band and re-enters if conditions stabilize.
 
-**Strategy 3:** Enters positions only when VIX < 20 and VVIX < 95, exiting if VIX > 20 or VVIX > 100.
-""")
+**Strategy 3:** enters whenever VIX < 20 and VVIX < 95, exiting if VIX > 20 or VVIX > 100. 
+By default, it uses VIX=20 and VVIX=95, both adjustable via sliders. This simpler approach quickly 
+leaves the market if volatility climbs beyond those cutoffs.
+    """)
+    
     st.subheader("Data Preview")
     st.markdown("This is a preview of the data (complete data) that we are using to run the backtests below.")
     try:
@@ -756,7 +762,6 @@ Where:
     st.markdown(
         """
 ---
-
 #### 🔵 2️⃣ Case 2: Long YMAG + Short QQQ (Hedged)
 ##### **Condition:**
 - If **VIX ≥ 20** or **VVIX ≥ 100**, we go **long YMAG and hedge by shorting QQQ**.
@@ -816,7 +821,6 @@ Where:
     st.markdown(
         """
 ---
-
 #### 🔴 3️⃣ Case 3: No Investment (Stay in Cash)
 ##### **Condition:**
 - If **VIX ≥ 20 or VVIX ≥ 100** and **correlation of YMAG with VIX or VVIX < -0.3**, we **do not invest**.
@@ -838,7 +842,6 @@ Where:
     st.markdown(
         """
 ---
-
 #### 📌 **Summary Table**
 
 | **Strategy**                     | **Formula Used** |
@@ -848,38 +851,95 @@ Where:
 | **No Investment (Stay in Cash)**  | Portfolio Value_t = Portfolio Value_{t-1} |
 
 This breakdown ensures the correct handling of **portfolio value updates under each trading strategy**, including the **correct hedge profit/loss for QQQ shorting**. 🚀
+
+---
 """
     )
-
     st.markdown("### Strategy 1 Detailed Explanation")
     st.markdown(
         """
 **Investment Rules for Strategy 1:**
-1. **Rule 1:** If VIX < 20 and VVIX < 100 → Long YMAX/YMAG (no hedge).
-2. **Rule 2:** If VIX ≥ 20 or VVIX ≥ 100 → Long YMAX/YMAG and short an equal dollar amount of QQQ.
-3. **Rule 3:** If VIX ≥ 20 or VVIX ≥ 100 and correlation of YMAX/YMAG with VIX/VVIX < -0.3 → No investment.
-"""
+1. **Long (No Hedge)** if VIX < 20 and VVIX < 100.  
+2. **Long + Short QQQ** if VIX ≥ 20 or VVIX ≥ 100, provided the correlation of YMAX/YMAG with VIX/VVIX is not too negative (≥ -0.3).  
+3. **No Investment** if VIX ≥ 20 or VVIX ≥ 100 **and** correlation < -0.3.  
+
+**Default Values:**
+- **VIX threshold:** 20  
+- **VVIX threshold:** 100  
+- **Correlation threshold:** -0.3  
+- **Correlation window (days):** 14  
+
+**Entry/Exit Details:**
+- You enter a **long position** (fully invested) when volatility is low (VIX < 20, VVIX < 100).  
+- If volatility picks up (VIX ≥ 20 or VVIX ≥ 100) but correlation is not too negative, you **hedge** by shorting QQQ.  
+- If that same high-volatility scenario has a negative correlation < -0.3, you **exit** (stay in cash).  
+
+**Sliders:**
+- A **Correlation Window** slider (1–30 days) lets you adjust how many days are used to compute rolling correlations.  
+- (Internally, you can also adjust VIX/VVIX thresholds if you incorporate additional sliders for them, but for now we 
+do not do that as we have that already in strategy 2.)
+    
+---
+    """
     )
     st.markdown("### Strategy 2 Detailed Explanation")
     st.markdown(
         """
 **Investment Rules for Strategy 2:**
-1. **Remain in market if**: 15 ≤ VIX ≤ 20,  90 ≤ VVIX < 100
+1. **Remain in market if**: 15 ≤ VIX ≤ 20,  90 ≤ VVIX < 100. That is VIX is within [15, 20] and VVIX is within [90, 100).
 2. **Exit if**: VIX < 15 or VIX > 20 or VVIX < 90 or VVIX ≥ 100
 3. **Re-Enter if**: VIX ∈ [15,20] and VVIX ∈ [90,95]
 
-**Summary of Logic**:
+**Default Values (Sliders):**
+- **VIX Lower:** 15  
+- **VIX Upper:** 20  
+- **VVIX Lower:** 90  
+- **VVIX Upper:** 100  
+- **VVIX Re-Entry Upper:** 95  
+
+**Summary of Logic under Default Values**:
 - In-Market Condition: 15 ≤ VIX ≤ 20, 90 ≤ VVIX < 100
 - Exit Condition: VIX < 15 or VIX > 20, or VVIX < 90 or VVIX ≥ 100
 - Re-Entry Condition: VIX ∈ [15,20], VVIX ∈ [90,95]
+
+**Entry/Exit Details:**
+- The strategy stays **in the market** only if volatility (VIX) is in a “safer” band (15–20) and VVIX is below 100 but above 90.  
+- If volatility moves **outside** those bounds (e.g., VIX < 15, VIX > 20, VVIX < 90, or VVIX ≥ 100), it **exits** (goes to cash).  
+- Once it exits, it won’t **re-enter** until both VIX and VVIX come back within a narrower range (VIX ∈ [15, 20], VVIX ∈ [90, 95]).  
+
+**Sliders:**
+- **VIX Lower/Upper**: Adjust the allowed volatility band (e.g., 15–20 by default).  
+- **VVIX Lower/Upper**: Set the normal range for VVIX (e.g., 90–100 by default).  
+- **VVIX Re-Entry Upper**: The threshold for re-entering the market (default 95).
+
+---
 """
     )
     st.markdown("### Strategy 3 Detailed Explanation")
     st.markdown(
         """
-**Investment Rules for Strategy 3:**
-1. **Enter if**: VIX < 20 and VVIX < 95
-2. **Exit if**: VIX > 20 or VVIX > 100
+**Investment Rules :**
+1. **Enter** if VIX < 20 and VVIX < 95.  
+2. **Exit** if VIX > 20 or VVIX > 100.  
+
+**Default Values (Sliders):**
+- **VIX Threshold:** 20  
+- **VVIX Threshold:** 95  
+
+**Entry/Exit Details:**
+- The strategy is **in market** whenever VIX is below 20 and VVIX below 95.  
+- If either VIX rises above 20 **or** VVIX exceeds 100, it **exits** (goes to cash).  
+
+**Sliders:**
+- You can adjust both the **VIX Threshold** (1–40 by default) and the **VVIX Threshold** 
+(1–120) to widen or narrow the conditions for entry and exit.
+
+---
+**In the App:**  
+- When you pick **Strategy 1**, you’ll see a slider for **Correlation Window** (default 14 days).  
+- For **Strategy 2**, you’ll see sliders for **VIX Lower/Upper**, **VVIX Lower/Upper**, and **VVIX Re-Entry Upper**.  
+- For **Strategy 3**, you’ll see sliders for **VIX Threshold** and **VVIX Threshold**.  
+- You can **combine** any two or three strategies with a user-specified priority, in which case the relevant parameter sliders for each chosen strategy become available.
 """
     )
 
@@ -911,6 +971,9 @@ elif page == "About":
 #    the app is fully responsive and can be used on any device.
 #    the app is hosted on streamlit sharing and can be accessed by anyone with the link.
 #    the app is open-source and can be forked and modified by anyone.
+
+
+
 
 
 
