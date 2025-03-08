@@ -21,6 +21,8 @@ st.markdown("""
 This app analyzes price data for multiple assets by computing the **VVIX/VIX** ratio.  
 The ratio is **floored** to create integer segments, and the plot below shows the selected asset's price over time,  
 color‐coded by those segments. The bottom subplot displays a color-coded bar indicating when each floored ratio changes.
+Further to it, to enhance the visualization of when price was under each ratio, there are also color-coded rectangles in the
+background of the chart for each respective ratio.
 """)
 
 # -----------------------------------------------------------------------------
