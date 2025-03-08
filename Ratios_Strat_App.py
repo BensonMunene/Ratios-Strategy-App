@@ -211,7 +211,7 @@ st.pyplot(fig)
 st.markdown("## Processed Data")
 st.markdown("""
 Below is the processed DataFrame used to generate the above plots.
-It includes columns (`Date`, `VIX`, `VVIX`, `QQQ`), the computed **ratio**,  
-the floored ratio (**ratio_int**), and the **change_id** (segment index).
+It includes columns (`Date`, `VIX`, `VVIX`, `QQQ`), the computed **`ratio`**,  
+the floored ratio (**`ratio_int`**), and the **`change_id`** (segment index).
 """)
 st.dataframe(df, height=300, use_container_width=True)
