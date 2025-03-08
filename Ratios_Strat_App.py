@@ -32,11 +32,11 @@ dataset_option = st.selectbox("Dataset", ["YMAX", "YMAG", "QQQ"])
 
 st.markdown("#### Select Timeframe")
 st.markdown("""
-Choose the desired time interval:  
+Choose the desired frequency of the data:  
 - **Daily** Frequency Data  
-- **4H** (4 hours)  
-- **1H** (1 hour)  
-- **30M** (30 minutes)
+- **4H** (4 hours frequency)  
+- **1H** (1 hour frequency)  
+- **30M** (30 minutes frequency)
 """)
 timeframe_option = st.selectbox("Timeframe", ["Daily", "4H", "1H", "30M"])
 
