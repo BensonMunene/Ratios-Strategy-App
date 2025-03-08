@@ -10,7 +10,7 @@ import matplotlib.dates as mdates
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Multi-Asset Price Analysis by VVIX/VIX Ratio",
-    layout="wide"
+    layout="centered"
 )
 
 # -----------------------------------------------------------------------------
