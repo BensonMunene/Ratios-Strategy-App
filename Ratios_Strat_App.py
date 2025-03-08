@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.dates as mdates
-import os
 
 # -----------------------------------------------------------------------------
 # 1. Set Streamlit page configuration to wide layout
@@ -25,26 +24,26 @@ color‐coded by those segments. The bottom subplot displays a color-coded bar i
 """)
 
 # -----------------------------------------------------------------------------
-# 3. Dataset and Timeframe Selection (in main body)
+# 3. Dataset and Timeframe Selection
 # -----------------------------------------------------------------------------
 st.markdown("#### Select Dataset")
 st.markdown("Choose from **YMAX**, **YMAG**, or **QQQ**.")
 dataset_option = st.selectbox("Dataset", ["YMAX", "YMAG", "QQQ"])
 
 st.markdown("#### Select Timeframe")
-st.markdown("""Choose the desired time interval: 
-- **Daily** Frequency Data
-- **4H** (4 hours)
-- **1H** (1 hour)
+st.markdown("""
+Choose the desired time interval:  
+- **Daily** Frequency Data  
+- **4H** (4 hours)  
+- **1H** (1 hour)  
 - **30M** (30 minutes)
 """)
 timeframe_option = st.selectbox("Timeframe", ["Daily", "4H", "1H", "30M"])
 
 # -----------------------------------------------------------------------------
-# 4. Define your data directory and CSV-filename logic
+# 4. Determine CSV filename based on selection
+#    (All CSV files are assumed to be in the same folder as this script)
 # -----------------------------------------------------------------------------
-data_dir = r"D:\Benson\aUpWork\Douglas Backtester Algo\Backtester Algorithm\Data\TradingView Data"
-
 def get_filename(dataset, timeframe):
     """
     Return the CSV filename for the chosen dataset & timeframe.
@@ -55,7 +54,7 @@ def get_filename(dataset, timeframe):
             return "YMAX_VIX_VVIX_QQQ_Daily.csv"
         elif dataset == "YMAG":
             return "YMAG_VIX_VVIX_QQQ_Daily.csv"
-        else:  # "QQQ" -> reuse YMAX daily
+        else:  # "QQQ" -> reuse YMAX Daily
             return "YMAX_VIX_VVIX_QQQ_Daily.csv"
 
     elif timeframe == "4H":
@@ -83,19 +82,18 @@ def get_filename(dataset, timeframe):
             return "YMAX_VIX_VVIX_QQQ_30M.csv"
 
 filename = get_filename(dataset_option, timeframe_option)
-file_path = os.path.join(data_dir, filename)
 
 # -----------------------------------------------------------------------------
 # 5. Load Data (with caching)
 # -----------------------------------------------------------------------------
 @st.cache_data
-def load_data(path):
-    return pd.read_csv(path)
+def load_data(csv_file):
+    return pd.read_csv(csv_file)
 
 try:
-    df = load_data(file_path)
+    df = load_data(filename)
 except Exception as e:
-    st.error(f"Error loading data from {file_path}: {e}")
+    st.error(f"Error loading data from {filename}: {e}")
     st.stop()
 
 # -----------------------------------------------------------------------------
@@ -116,7 +114,7 @@ df['ratio_int'] = np.floor(df['ratio']).astype(int)
 df['change_id'] = (df['ratio_int'] != df['ratio_int'].shift(1)).cumsum()
 
 # -----------------------------------------------------------------------------
-# 7. Define Color Map (ratio=7 => black)
+# 7. Define Color Map
 # -----------------------------------------------------------------------------
 color_map = {
     0: 'grey',
@@ -134,7 +132,7 @@ color_map = {
 unique_ratios = sorted(df['ratio_int'].unique())
 
 # -----------------------------------------------------------------------------
-# 8. Plotting (increase figure size)
+# 8. Plotting (larger figure size)
 # -----------------------------------------------------------------------------
 fig, (ax_line, ax_bar) = plt.subplots(
     2, 1, sharex=True, figsize=(16, 10),
@@ -160,6 +158,7 @@ for i in range(len(df) - 1):
     color = color_map.get(ratio1, 'black')
     ax_line.plot([x1, x2], [y1, y2], color=color, linewidth=2)
 
+# Add semi-transparent rectangles for each ratio segment
 for _, grp in df.groupby('change_id'):
     ratio_val = grp['ratio_int'].iloc[0]
     color = color_map.get(ratio_val, 'black')
