@@ -123,7 +123,7 @@ color_map = {
     1: 'green',
     2: 'red',
     3: 'blue',
-    4: 'orange',
+    4: 'green',
     5: 'purple',
     6: 'brown',
     7: 'black',
@@ -171,7 +171,7 @@ for _, grp in df.groupby('change_id'):
 plot_title = f"{dataset_option} Price Over Time ({timeframe_option}) by VVIX/VIX Ratio"
 ax_line.set_title(plot_title, fontsize=16)
 ax_line.set_ylabel('Price', fontsize=12)
-ax_line.legend(title='Floored Ratio')
+ax_line.legend(title='Floored Ratio', loc='upper right')
 
 # --- Bottom Subplot: Color-Coded Bar Indicator ---
 for ratio_val in unique_ratios:
