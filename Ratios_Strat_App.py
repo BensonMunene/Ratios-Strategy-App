@@ -28,7 +28,7 @@ background of the chart for each respective ratio.
 # -----------------------------------------------------------------------------
 # 3. Dataset and Timeframe Selection
 # -----------------------------------------------------------------------------
-st.markdown("#### Select Dataset")
+st.markdown("#### Select Asset")
 st.markdown("Choose from **YMAX**, **YMAG**, or **QQQ**.")
 dataset_option = st.selectbox("Dataset", ["YMAX", "YMAG", "QQQ"])
 
