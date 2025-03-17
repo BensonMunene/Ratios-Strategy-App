@@ -58,32 +58,32 @@ Choose the desired frequency of the data:
 timeframe_option = st.selectbox("Select Timeframe", ["Daily", "4H", "1H", "30M"])
 
 # -----------------------------------------------------------------------------
-# 5. Custom Band Settings
+# 5. Custom Zone Settings
 # -----------------------------------------------------------------------------
-st.markdown("### Custom Band Settings")
+st.markdown("### Custom Zone Settings")
 st.markdown("""
-If you want to group the computed floored ratios into custom bands (zones) and assign your own colors, please enable the option below.
-For example, you might want to combine ratios 1-2 as one band (with a chosen color), 3-5 as another, etc.
+If you want to group the computed floored ratios into custom zones and assign your own colors, please enable the option below.
+For example, you might want to combine ratios 1-2 as one zone (with a chosen color), 3-5 as another, etc.
 """)
-use_custom = st.checkbox("Use custom band grouping", value=True)
+use_custom = st.checkbox("Use custom zone grouping", value=True)
 
 if use_custom:
-    num_bands = st.number_input("Number of custom bands", min_value=1, max_value=8, value=3, step=1)
-    custom_bands = []
-    st.markdown("#### Define each custom band:")
-    for i in range(int(num_bands)):
+    num_zones = st.number_input("Number of custom zones", min_value=1, max_value=8, value=3, step=1)
+    custom_zones = []
+    st.markdown("#### Define each custom zone:")
+    for i in range(int(num_zones)):
         col1, col2, col3 = st.columns(3)
-        # Set default values for the first three bands; later bands get generic defaults.
+        # Set default values for the first three zones; later zones get generic defaults.
         default_lower = 1 if i == 0 else (3 if i == 1 else (6 if i == 2 else 0))
         default_upper = 2 if i == 0 else (5 if i == 1 else (8 if i == 2 else 8))
         default_color = "#32CD32" if i == 0 else ("#DC143C" if i == 1 else ("#1E90FF" if i == 2 else "#AAAAAA"))
         with col1:
-            lower_bound = st.number_input(f"Band {i+1} lower bound", min_value=0, max_value=8, value=default_lower, key=f"band_{i}_lower")
+            lower_bound = st.number_input(f"Zone {i+1} lower bound", min_value=0, max_value=8, value=default_lower, key=f"zone_{i}_lower")
         with col2:
-            upper_bound = st.number_input(f"Band {i+1} upper bound", min_value=lower_bound, max_value=8, value=default_upper, key=f"band_{i}_upper")
+            upper_bound = st.number_input(f"Zone {i+1} upper bound", min_value=lower_bound, max_value=8, value=default_upper, key=f"zone_{i}_upper")
         with col3:
-            band_color = st.color_picker(f"Band {i+1} color", value=default_color, key=f"band_{i}_color")
-        custom_bands.append({"lower": lower_bound, "upper": upper_bound, "color": band_color})
+            zone_color = st.color_picker(f"Zone {i+1} color", value=default_color, key=f"zone_{i}_color")
+        custom_zones.append({"lower": lower_bound, "upper": upper_bound, "color": zone_color})
 else:
     # Define a default color mapping if custom grouping is not used
     color_map = {
@@ -193,7 +193,7 @@ with col2:
 # 9. Button to Generate Zones Indicator
 # -----------------------------------------------------------------------------
 st.markdown("""
-You have successfully specified your asset, timeframe, date range, and (if enabled) your custom band settings.  
+You have successfully specified your asset, timeframe, date range, and (if enabled) your custom zone settings.  
 Please click the button below to generate the zones indicator plot **using your chosen options**.
 """)
 generate_button = st.button("Generate the zones indicator")
@@ -216,18 +216,18 @@ if generate_button:
     df_filtered['ratio_int'] = np.floor(df_filtered['ratio']).astype(int)
 
     if use_custom:
-        # Define a function to get the custom band label and color for a given ratio value
-        def get_custom_band_value(x, bands):
-            for band in bands:
-                if x >= band["lower"] and x <= band["upper"]:
-                    return f"{band['lower']}-{band['upper']}", band["color"]
-            return ("No Band", "grey")
+        # Define a function to get the custom zone label and color for a given ratio value
+        def get_custom_zone_value(x, zones):
+            for zone in zones:
+                if x >= zone["lower"] and x <= zone["upper"]:
+                    return f"{zone['lower']}-{zone['upper']}", zone["color"]
+            return ("No Zone", "grey")
         
-        band_info = df_filtered['ratio_int'].apply(lambda x: get_custom_band_value(x, custom_bands))
-        df_filtered['custom_band'] = band_info.apply(lambda x: x[0])
-        df_filtered['custom_color'] = band_info.apply(lambda x: x[1])
-        # Group by contiguous changes in the custom band label
-        df_filtered['band_group'] = (df_filtered['custom_band'] != df_filtered['custom_band'].shift(1)).cumsum()
+        zone_info = df_filtered['ratio_int'].apply(lambda x: get_custom_zone_value(x, custom_zones))
+        df_filtered['custom_zone'] = zone_info.apply(lambda x: x[0])
+        df_filtered['custom_color'] = zone_info.apply(lambda x: x[1])
+        # Group by contiguous changes in the custom zone label
+        df_filtered['zone_group'] = (df_filtered['custom_zone'] != df_filtered['custom_zone'].shift(1)).cumsum()
     else:
         # Use the default grouping based on ratio_int changes
         df_filtered['change_id'] = (df_filtered['ratio_int'] != df_filtered['ratio_int'].shift(1)).cumsum()
@@ -254,7 +254,7 @@ if generate_button:
         plotly_title = f"{asset_option} Price Over Time ({timeframe_option}) by VVIX/VIX Ratio"
         fig = make_subplots(rows=1, cols=1)
         if use_custom:
-            groups = list(df_data.groupby('band_group'))
+            groups = list(df_data.groupby('zone_group'))
         else:
             groups = list(df_data.groupby('change_id'))
         added_legends = set()
@@ -271,7 +271,7 @@ if generate_button:
                 line_data = group_original.iloc[1:]
             
             if use_custom:
-                label_val = group_original['custom_band'].iloc[0]
+                label_val = group_original['custom_zone'].iloc[0]
                 color = group_original['custom_color'].iloc[0]
             else:
                 ratio_val = group_original['ratio_int'].iloc[0]
@@ -335,7 +335,7 @@ if generate_button:
             },
             hovermode="closest",
             showlegend=True,
-            legend_title='Custom Bands' if use_custom else 'Floored Ratio',
+            legend_title='Custom Zones' if use_custom else 'Floored Ratio',
             height=800,
             plot_bgcolor='white',
             paper_bgcolor='white'
@@ -350,14 +350,14 @@ if generate_button:
         
         # Prepare legend placeholders for each unique group label
         if use_custom:
-            unique_labels = sorted(df_data['custom_band'].unique())
+            unique_labels = sorted(df_data['custom_zone'].unique())
         else:
             unique_labels = sorted(df_data['ratio_int'].unique())
         
         for label in unique_labels:
             if use_custom:
-                color = df_data[df_data['custom_band'] == label]['custom_color'].iloc[0] if not df_data[df_data['custom_band'] == label].empty else 'black'
-                legend_label = f"Band {label}"
+                color = df_data[df_data['custom_zone'] == label]['custom_color'].iloc[0] if not df_data[df_data['custom_zone'] == label].empty else 'black'
+                legend_label = f"Zone {label}"
             else:
                 color = color_map.get(label, 'black')
                 legend_label = f"Ratio = {label}"
@@ -378,8 +378,8 @@ if generate_button:
 
         # Background rectangles for each segment
         if use_custom:
-            for _, grp in df_data.groupby('band_group'):
-                label_val = grp['custom_band'].iloc[0]
+            for _, grp in df_data.groupby('zone_group'):
+                label_val = grp['custom_zone'].iloc[0]
                 color = grp['custom_color'].iloc[0]
                 start_date = grp['Date'].iloc[0]
                 end_date = grp['Date'].iloc[-1]
@@ -401,7 +401,7 @@ if generate_button:
         ax.tick_params(axis='y', labelsize=8)
         ax.grid(True, which='major', axis='both', alpha=0.5)
         ax.legend(
-            title="Custom Bands" if use_custom else "Floored Ratio",
+            title="Custom Zones" if use_custom else "Floored Ratio",
             loc="center left",
             bbox_to_anchor=(1, 0.5),
             fontsize=8,
@@ -434,7 +434,7 @@ if generate_button:
     st.markdown("""
     Below is the processed DataFrame used to generate the above plots.
     It includes columns (`Date`, `VIX`, `VVIX`, the asset price column),
-    the computed **ratio**, the floored ratio (**ratio_int**), and either the custom band labels
-    (**custom_band**) with colors (**custom_color**) or the default segmentation (**change_id**).
+    the computed **ratio**, the floored ratio (**ratio_int**), and either the custom zone labels
+    (**custom_zone**) with colors (**custom_color**) or the default segmentation (**change_id**).
     """)
     st.dataframe(df_filtered, height=300, use_container_width=True)
