@@ -397,7 +397,7 @@ if generate_button:
         ax.set_ylim(min_price, max_price)
         date_formatter = DateFormatter("%b %d, %Y")
         ax.xaxis.set_major_formatter(date_formatter)
-        ax.tick_params(axis='x', labelrotation=50, labelsize=8)
+        ax.tick_params(axis='x', labelrotation=20, labelsize=8)
         ax.tick_params(axis='y', labelsize=8)
         ax.grid(True, which='major', axis='both', alpha=0.5)
         ax.legend(
